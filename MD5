@@ -1,0 +1,10 @@
+3cbea608b3354d93cf545fe920a3ff19 *DESCRIPTION
+128cb469be09d1b4c8004ec4b1fffd53 *NAMESPACE
+7229356318fa70a2efe30de58283b7de *R/smoothedLasso.r
+548aec81ea946b29206cc9c87800045c *man/objFunction.Rd
+f10cfadc5fb7d7e84ceff372a9199994 *man/objFunctionGradient.Rd
+1c8fb95a7ff29200bc7768969ace57bb *man/objFunctionSmooth.Rd
+a7f604a2b67d3c519baa10e7189895c1 *man/objFunctionSmoothGradient.Rd
+91b05c8f152d06e57ebc93b5d132039c *man/solveSmoothedLASSO.Rd
+19416c47e553ea8e4cce2f60dc0402d6 *man/solveSmoothedLASSOSequence.Rd
+72bbced126ebe2faeeb142dbce1e86f6 *man/solveUnsmoothedLASSO.Rd
