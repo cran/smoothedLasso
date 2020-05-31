@@ -147,7 +147,7 @@ objFunction <- function(beta,X,y,lambda) {
 #' @export
 objFunctionGradient <- function(beta,X,y,lambda) {
 	n <- nrow(X)
-	-2/n * t(y - X %*% beta) %*% X + lambda*sign(beta)
+	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*sign(beta)
 }
 
 
@@ -218,7 +218,7 @@ objFunctionSmoothGradient <- function(beta,X,y,lambda,mu,entropy=T) {
 	n <- nrow(X)
 	# two lines through the origin with slopes -1 and +1 define the PWA for the absolute value
 	p <- c(-1,+1)
-	as.numeric( -2/n * t(y - X %*% beta) %*% X + lambda*nesterovArgumentGradient(p,beta,mu,entropy) )
+	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*nesterovArgumentGradient(p,beta,mu,entropy)
 }
 
 
@@ -323,10 +323,11 @@ solveSmoothedLASSO <- function(X,y,lambda,mu,entropy=T) {
 #' 
 #' @examples
 #' library(smoothedLasso)
+#' require(Matrix)
 #' n <- 100
 #' p <- 500
 #' beta <- runif(p)
-#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' X <- Matrix(sample(0:1,size=n*p,replace=TRUE),nrow=n,ncol=p,sparse=TRUE)
 #' y <- X %*% beta
 #' lambda <- 1
 #' print(solveSmoothedLASSOSequence(X,y,lambda))

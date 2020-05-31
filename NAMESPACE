@@ -10,3 +10,4 @@ export(solveUnsmoothedLASSO)
 importFrom(Rdpack,reprompt)
 
 importFrom("stats", "optim", "runif")
+import(Matrix)
