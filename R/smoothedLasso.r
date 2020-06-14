@@ -119,7 +119,8 @@ nesterovArgumentGradient <- function(p,x,mu,entropy=F) {
 #' 
 #' @export
 objFunction <- function(beta,X,y,lambda) {
-	1/2*sum((y - X %*% beta)**2) + lambda*sum(abs(beta))
+	n <- nrow(X)
+	1/n*sum((y - X %*% beta)**2) + lambda*sum(abs(beta))
 }
 
 #' Auxiliary function which computes the (non-smooth) gradient of the LASSO objective function with respect to \eqn{\beta}.
@@ -145,7 +146,8 @@ objFunction <- function(beta,X,y,lambda) {
 #' 
 #' @export
 objFunctionGradient <- function(beta,X,y,lambda) {
-	as.numeric(-1 * t(y - X %*% beta) %*% X) + lambda*sign(beta)
+	n <- nrow(X)
+	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*sign(beta)
 }
 
 
@@ -181,10 +183,11 @@ objFunctionGradient <- function(beta,X,y,lambda) {
 #' 
 #' @export
 objFunctionSmooth <- function(beta,X,y,lambda,mu,entropy=T) {
+	n <- nrow(X)
 	# two lines through the origin with slopes -1 and +1 define the PWA for the absolute value
 	p <- c(-1,+1)
 	# smooth each component of beta separately and sum them up to obtain the L1 norm of beta
-	1/2*sum((y - X %*% beta)**2) + lambda*sum(nesterovPWA(p,beta,mu,entropy))
+	1/n*sum((y - X %*% beta)**2) + lambda*sum(nesterovPWA(p,beta,mu,entropy))
 }
 
 #' Auxiliary function which computes the gradient of the smoothed LASSO objective function with respect to \eqn{\beta}.
@@ -212,9 +215,10 @@ objFunctionSmooth <- function(beta,X,y,lambda,mu,entropy=T) {
 #' 
 #' @export
 objFunctionSmoothGradient <- function(beta,X,y,lambda,mu,entropy=T) {
+	n <- nrow(X)
 	# two lines through the origin with slopes -1 and +1 define the PWA for the absolute value
 	p <- c(-1,+1)
-	as.numeric(-1 * t(y - X %*% beta) %*% X) + lambda*nesterovArgumentGradient(p,beta,mu,entropy)
+	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*nesterovArgumentGradient(p,beta,mu,entropy)
 }
 
 
@@ -329,7 +333,7 @@ solveSmoothedLASSO <- function(X,y,lambda,mu,entropy=T) {
 #' print(solveSmoothedLASSOSequence(X,y,lambda))
 #' 
 #' @export
-solveSmoothedLASSOSequence <- function(X,y,lambda,muSeq=2**(-(0:5)),entropy=T) {
+solveSmoothedLASSOSequence <- function(X,y,lambda,muSeq=2**seq(3,-6),entropy=T) {
 	p <- ncol(X)
 	res <- runif(p)
 	for(mu in muSeq) {

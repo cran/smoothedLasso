@@ -4,8 +4,7 @@
 \alias{solveSmoothedLASSOSequence}
 \title{Minimize the smoothed LASSO objective function with respect to \eqn{\beta} using the progressive smoothing algorithm.}
 \usage{
-solveSmoothedLASSOSequence(X, y, lambda, muSeq = 2^(-(0:5)),
-  entropy = T)
+solveSmoothedLASSOSequence(X, y, lambda, muSeq = 2^seq(3, -6), entropy = T)
 }
 \arguments{
 \item{X}{The data matrix of dimensions \eqn{n \times p}.}
@@ -26,10 +25,11 @@ Minimize the smoothed LASSO objective function with respect to \eqn{\beta} using
 }
 \examples{
 library(smoothedLasso)
+require(Matrix)
 n <- 100
 p <- 500
 beta <- runif(p)
-X <- matrix(runif(n*p),nrow=n,ncol=p)
+X <- Matrix(sample(0:1,size=n*p,replace=TRUE),nrow=n,ncol=p,sparse=TRUE)
 y <- X \%*\% beta
 lambda <- 1
 print(solveSmoothedLASSOSequence(X,y,lambda))
