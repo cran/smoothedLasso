@@ -2,33 +2,37 @@
 % Please edit documentation in R/smoothedLasso.r
 \name{objFunction}
 \alias{objFunction}
-\title{Auxiliary function defining the LASSO objective function.}
+\title{Auxiliary function to define the objective function of an L1 penalized regression operator.}
 \usage{
-objFunction(beta, X, y, lambda)
+objFunction(betavector, u, v, w)
 }
 \arguments{
-\item{beta}{The \eqn{p}-vector of coefficients.}
+\item{betavector}{The vector of regression coefficients.}
 
-\item{X}{The data matrix of dimensions \eqn{n \times p}.}
+\item{u}{The function encoding the objective of the regression operator.}
 
-\item{y}{The \eqn{n}-vector of responses.}
+\item{v}{The function encoding the penalty of the regression operator.}
 
-\item{lambda}{The LASSO regularization parameter.}
+\item{w}{The function encoding the dependence structure among the regression coefficients.}
 }
 \value{
-The value of the LASSO objective function.
+The value of the L1 penalized regression operator for the input \eqn{betavector}.
 }
 \description{
-Auxiliary function defining the LASSO objective function.
+Auxiliary function to define the objective function of an L1 penalized regression operator.
 }
 \examples{
 library(smoothedLasso)
 n <- 100
 p <- 500
-beta <- runif(p)
+betavector <- runif(p)
 X <- matrix(runif(n*p),nrow=n,ncol=p)
-y <- X \%*\% beta
+y <- X \%*\% betavector
 lambda <- 1
-print(objFunction(beta,X,y,lambda))
+temp <- standardLasso(X,y,lambda)
+print(objFunction(betavector,temp$u,temp$v,temp$w))
 
+}
+\references{
+Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
 }

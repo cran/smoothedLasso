@@ -1,23 +1,23 @@
 # **************************************************************************************************************************************
-# Methodology for smoothing the LASSO objective function using Nesterov smoothing.
+# Methodology for smoothing L1 penalized regression operators using Nesterov smoothing.
 # 
 # The main functions provided in the package are:
 # 
-# 1) The smoothed LASSO objective function 'objFunctionSmooth' and its gradient 'objFunctionSmoothGradient'.
-# 2) The minimization procedure 'solveSmoothedLASSO' returning the regression estimates for the smoothed LASSO.
-# 3) The progressive smoothing approach 'solveSmoothedLASSOSequence' returning the regression estimates for the smoothed LASSO.
-# 
+# 1) The functions defining popular L1 penalized regression operators, for instance 'standardLasso'.
+# 2) The functions 'objFunction' and 'objFunctionGradient' defining the unsmoothed objective function of an L1 penalized regression operator and its gradient, as well as 'objFunctionSmooth' and 'objFunctionSmoothGradient' defining the smoothed objective function of an L1 penalized regression operator.
+# 3) The minimization procedure 'solveFunction' returning the regression estimates for an unsmoothed or smoothed regression operator.
+# 4) The progressive smoothing approach 'solveSmoothedSequence' returning the regression estimates for a smoothed regression operator.
 # **************************************************************************************************************************************
 
 
 
 
 
-# ************************************************************************
+# *****************************************************************************
 # Auxiliary function needed for the Nesterov smoothing framework
 # 
 # All the functions in this section are not exported.
-# ************************************************************************
+# *****************************************************************************
 
 # Definition of a one dimensional PWA (piecewise affine function).
 # Since each PWA is assumed to go to the origin (as does the absolute value), each PWA is parameterized by (p1,0) with only the slope p1 given in input vector 'p'.
@@ -31,7 +31,7 @@ PWA <- function(p,x) {
 # Fast version of the Michelot (1986) projection algorithm. The input 'x' can be a matrix where each row is projected separately.
 michelot <- function(x) {
 	d <- ncol(x)
-	u <- t(apply(x,1, function(z) sort(z,decreasing=T) ))
+	u <- t(apply(x,1, function(z) sort(z,decreasing=TRUE) ))
 	v <- t((1-apply(u,1,cumsum))/(1:d))
 	r <- apply(u+v,1, function(z) max(which(z>0)) )
 	l <- v[cbind(1:nrow(x),r)]
@@ -41,7 +41,7 @@ michelot <- function(x) {
 # Nesterov with entropy and squared error prox smoothing.
 # The function smoothes several functions simultaneously.
 # The input 'fx' can be a matrix, where each row contains the values per PWA. The input 'mu' is the Nesterov smoothing parameter.
-nesterov <- function(fx,mu,entropy=F) {
+nesterov <- function(fx,mu,entropy=TRUE) {
 	if(entropy) {
 		# analytic expression of Nesterov smoothing obtained with entropy prox function
 		return( mu*log( rowMeans(exp(fx/mu)) ))
@@ -57,7 +57,7 @@ nesterov <- function(fx,mu,entropy=F) {
 # Nesterov's smoothed PWA. The function smoothes several functions simultaneously.
 # The function inputs are the vector 'p' of slopes for the one dimensional PWAs, the vector of one dimensional points 'x', the Nesterov smoothing parameter 'mu',
 # and a boolean flag 'entropy' to switch between the entropy prox function and the squared error prox function.
-nesterovPWA <- function(p,x,mu,entropy=F) {
+nesterovPWA <- function(p,x,mu,entropy=TRUE) {
 	nesterov(PWA(p,x),mu,entropy)
 }
 
@@ -83,264 +83,428 @@ nesterovArgumentGradient_sq <- function(p,x,mu) {
 # Gradient of Nesterov's smoothed PWA.
 # The input 'p' is a vector of one dimensional slopes defining the PWAs, 'x' is a vector of one dimensional points, and 'mu' is the Nesterov smoothing parameter.
 # The boolean flag 'entropy' switches between the entropy prox function and the squared error prox function.
-nesterovArgumentGradient <- function(p,x,mu,entropy=F) {
+nesterovArgumentGradient <- function(p,x,mu,entropy=TRUE) {
 	if(entropy) nesterovArgumentGradient_entropy(p,x,mu)
 	else nesterovArgumentGradient_sq(p,x,mu)
 }
 
-
-
-
-
-# ************************************************************************
-# Definition of the LASSO objective function
-# ************************************************************************
-
-#' Auxiliary function defining the LASSO objective function.
-#' 
-#' @param beta The \eqn{p}-vector of coefficients.
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
-#' 
-#' @return The value of the LASSO objective function.
-#' 
-#' @importFrom Rdpack reprompt
-#' 
-#' @examples
-#' library(smoothedLasso)
-#' n <- 100
-#' p <- 500
-#' beta <- runif(p)
-#' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
-#' lambda <- 1
-#' print(objFunction(beta,X,y,lambda))
-#' 
-#' @export
-objFunction <- function(beta,X,y,lambda) {
-	n <- nrow(X)
-	1/n*sum((y - X %*% beta)**2) + lambda*sum(abs(beta))
-}
-
-#' Auxiliary function which computes the (non-smooth) gradient of the LASSO objective function with respect to \eqn{\beta}.
-#' 
-#' @param beta The \eqn{p}-vector of coefficients.
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
-#' 
-#' @return The value of the gradient of the LASSO objective function at \eqn{\beta}.
-#' 
-#' @importFrom Rdpack reprompt
-#' 
-#' @examples
-#' library(smoothedLasso)
-#' n <- 100
-#' p <- 500
-#' beta <- runif(p)
-#' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
-#' lambda <- 1
-#' print(objFunctionGradient(beta,X,y,lambda))
-#' 
-#' @export
-objFunctionGradient <- function(beta,X,y,lambda) {
-	n <- nrow(X)
-	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*sign(beta)
+# Parametrization of a positive definite matrix of dimensions d*d via its Cholesky decomposition: x should be of length d*(d+1)/2 and will be put on the lower triangle of the Cholesky matrix
+toCholesky <- function(d,x) {
+	Theta <- matrix(0,d,d)
+	Theta[lower.tri(Theta,diag=TRUE)] <- x
+	Theta %*% t(Theta)
 }
 
 
 
 
 
-# ************************************************************************
-# Smoothed LASSO objective function and its gradient
-# ************************************************************************
+# *****************************************************************************
+# Definition of L1 penalized regression operators
+# 
+# All functions return a list with the following 3+3 functions defining
+# the regression operator and its derivative: u,v,w,du,dv,dw
+# *****************************************************************************
 
-#' Auxiliary function defining the smoothed LASSO objective function.
+#' Auxiliary function which returns the objective, penalty, and dependence structure among regression coefficients of the Lasso.
 #' 
-#' @param beta The \eqn{p}-vector of coefficients.
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
+#' @param X The design matrix.
+#' @param y The response vector.
+#' @param lambda The Lasso regularization parameter.
+#' 
+#' @return A list with six functions, precisely the objective \eqn{u}, penalty \eqn{v}, and dependence structure \eqn{w}, as well as their derivatives \eqn{du}, \eqn{dv}, and \eqn{dw}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Tibshirani, R. (1996). Regression Shrinkage and Selection Via the Lasso. J Roy Stat Soc B Met, 58(1):267-288.
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' lambda <- 1
+#' temp <- standardLasso(X,y,lambda)
+#' 
+#' @export
+standardLasso <- function(X,y,lambda) {
+	n <- nrow(X)
+	p <- ncol(X)
+	u <- function(beta) 1/n * sum((y - X %*% beta)**2)
+	v <- function(z) lambda * sum(z)
+	w <- function(beta) beta
+	du <- function(beta) -2/n * as.vector(t(y - X %*% beta) %*% X)
+	dv <- function(z) rep(lambda,p)
+	dw <- function(beta) diag(p)
+	list(u=u,v=v,w=w,du=du,dv=dv,dw=dw)
+}
+
+#' Auxiliary function which returns the objective, penalty, and dependence structure among regression coefficients of the elastic net.
+#' 
+#' @param X The design matrix.
+#' @param y The response vector.
+#' @param alpha The regularization parameter of the elastic net.
+#' 
+#' @return A list with six functions, precisely the objective \eqn{u}, penalty \eqn{v}, and dependence structure \eqn{w}, as well as their derivatives \eqn{du}, \eqn{dv}, and \eqn{dw}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Zou, H. and Hastie, T. (2005). Regularization and variable selection via the elastic net. J Roy Stat Soc B Met, 67(2):301-320.
+#' @references Friedman, J., Hastie, T., Tibshirani, R., Narasimhan, B., Tay, K., Simon, N., and Qian, J. (2020). glmnet: Lasso and Elastic-Net Regularized Generalized Linear Models. R-package version 4.0.
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' alpha <- 0.5
+#' temp <- elasticNet(X,y,alpha)
+#' 
+#' @export
+elasticNet <- function(X,y,alpha) {
+	n <- nrow(X)
+	p <- ncol(X)
+	u <- function(beta) 1/(2*n) * sum((y - X %*% beta)**2) + 1/2*(1-alpha) * sum(beta**2)
+	v <- function(z) alpha * sum(z)
+	w <- function(beta) beta
+	du <- function(beta) -1/n * as.vector(t(y - X %*% beta) %*% X) + (1-alpha)*beta
+	dv <- function(z) rep(alpha,p)
+	dw <- function(beta) diag(p)
+	list(u=u,v=v,w=w,du=du,dv=dv,dw=dw)
+}
+
+#' Auxiliary function which returns the objective, penalty, and dependence structure among regression coefficients of the fused Lasso.
+#' 
+#' @param X The design matrix.
+#' @param y The response vector.
+#' @param E The adjacency matrix which encodes with a one in position \eqn{(i,j)} the presence of an edge between variables \eqn{i} and \eqn{j}. Note that only the upper triangle of \eqn{E} is read.
+#' @param lambda The first regularization parameter of the fused Lasso.
+#' @param gamma The second regularization parameter of the fused Lasso.
+#' 
+#' @return A list with six functions, precisely the objective \eqn{u}, penalty \eqn{v}, and dependence structure \eqn{w}, as well as their derivatives \eqn{du}, \eqn{dv}, and \eqn{dw}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Tibshirani, R., Saunders, M., Rosset, S., Zhu, J., and Knight, K. (2005). Sparsity and Smoothness via the Fused Lasso. J Roy Stat Soc B Met, 67(1):91-108.
+#' @references Arnold, T.B. and Tibshirani, R.J. (2020). genlasso: Path Algorithm for Generalized Lasso Problems. R package version 1.5.
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' E <- matrix(sample(c(TRUE,FALSE),p*p,replace=TRUE),p)
+#' lambda <- 1
+#' gamma <- 0.5
+#' temp <- fusedLasso(X,y,E,lambda,gamma)
+#' 
+#' @export
+fusedLasso <- function(X,y,E,lambda,gamma) {
+	n <- nrow(X)
+	p <- ncol(X)
+	E <- upper.tri(E,diag=TRUE)
+	indices <- unname(which(E,arr.ind=TRUE))
+	m <- p + sum(E)
+	u <- function(beta) 1/2 * sum((y - X %*% beta)**2)
+	v <- function(z) lambda * sum(z[1:p]) + lambda*gamma * sum(z[(p+1):m])
+	w <- function(beta) c(beta, beta[indices[,1]]-beta[indices[,2]])
+	du <- function(beta) -1 * as.vector(t(y - X %*% beta) %*% X)
+	dv <- function(z) c(rep(lambda,p), rep(lambda*gamma,m-p))
+	temp <- matrix(0,m,p)
+	for(j in 1:p) temp[j,j] <- 1
+	for(j in (p+1):m) {
+		temp[j,indices[j-p,1]] <- 1
+		temp[j,indices[j-p,2]] <- -1
+	}
+	dw <- function(beta) temp
+	list(u=u,v=v,w=w,du=du,dv=dv,dw=dw)
+}
+
+#' Auxiliary function which returns the objective, penalty, and dependence structure among regression coefficients of the graphical Lasso.
+#' 
+#' @param S The sample covariance matrix.
+#' @param lambda The regularization parameter of the graphical Lasso.
+#' 
+#' @return A list with three functions, precisely the objective \eqn{u}, penalty \eqn{v}, and dependence structure \eqn{w}. Not all derivatives are available in closed form, and thus computing the numerical derivative of the entire objective function is recommended.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Friedman, J., Hastie, T., and Tibshirani, R. (2008). Sparse inverse covariance estimation with the graphical lasso. Biostatistics, 9(3):432-441.
+#' @references Friedman, J., Hastie, T., and Tibshirani, R. (2019). glasso: Graphical Lasso: Estimation of Gaussian Graphical Models. R package version 1.11.
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' p <- 30
+#' S <- matrix(rWishart(1,p,diag(p)),p)
+#' lambda <- 1
+#' temp <- graphicalLasso(S,lambda)
+#' 
+#' @export
+graphicalLasso <- function(S,lambda) {
+	p <- ncol(S)
+	u <- function(beta) {
+		Theta <- toCholesky(p,beta)
+		sum(diag(S %*% Theta)) - as.numeric(determinant(Theta,logarithm=TRUE)$modulus)
+	}
+	v <- function(z) lambda * sum(z)
+	w <- function(beta) {
+		toCholesky(p,beta)
+	}
+	list(u=u,v=v,w=w)
+}
+
+#' Auxiliary function which returns the objective, penalty, and dependence structure among regression coefficients of the Lasso for polygenic risk scores (prs).
+#' 
+#' @param X The design matrix.
+#' @param y The response vector.
+#' @param s The shrinkage parameter used to regularize the design matrix.
+#' @param lambda The regularization parameter of the prs Lasso.
+#' 
+#' @return A list with six functions, precisely the objective \eqn{u}, penalty \eqn{v}, and dependence structure \eqn{w}, as well as their derivatives \eqn{du}, \eqn{dv}, and \eqn{dw}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Mak, T.S., Porsch, R.M., Choi, S.W., Zhou, X., and Sham, P.C. (2017). Polygenic scores via penalized regression on summary statistics. Genet Epidemiol, 41(6):469-480.
+#' @references Mak, T.S. and Porsch, R.M. (2020). lassosum: LASSO with summary statistics and a reference panel. R package version 0.4.5.
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' s <- 0.5
+#' lambda <- 1
+#' temp <- prsLasso(X,y,s,lambda)
+#' 
+#' @export
+prsLasso <- function(X,y,s,lambda) {
+	p <- ncol(X)
+	r <- as.vector(t(X) %*% y)
+	u <- function(beta) (1-s)*sum((X %*% beta)**2) - 2*sum(beta*r) + s*sum(beta**2)
+	v <- function(z) 2 * lambda * sum(z)
+	w <- function(beta) beta
+	du <- function(beta) (1-s)*2*as.vector((t(X) %*% X) %*% beta) - 2*r + 2*s*beta
+	dv <- function(z) rep(2*lambda,p)
+	dw <- function(beta) diag(p)
+	list(u=u,v=v,w=w,du=du,dv=dv,dw=dw)
+}
+
+
+
+
+
+# *****************************************************************************
+# Definition of the unsmoothed objective function and its (non-smooth) gradient
+# *****************************************************************************
+
+#' Auxiliary function to define the objective function of an L1 penalized regression operator.
+#' 
+#' @param betavector The vector of regression coefficients.
+#' @param u The function encoding the objective of the regression operator.
+#' @param v The function encoding the penalty of the regression operator.
+#' @param w The function encoding the dependence structure among the regression coefficients.
+#' 
+#' @return The value of the L1 penalized regression operator for the input \eqn{betavector}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' lambda <- 1
+#' temp <- standardLasso(X,y,lambda)
+#' print(objFunction(betavector,temp$u,temp$v,temp$w))
+#' 
+#' @export
+objFunction <- function(betavector,u,v,w) {
+	u(betavector) + v(abs(w(betavector)))
+}
+
+#' Auxiliary function which computes the (non-smooth) gradient of an L1 penalized regression operator.
+#' 
+#' @param betavector The vector of regression coefficients.
+#' @param w The function encoding the dependence structure among the regression coefficients.
+#' @param du The derivative (gradient) of the objective of the regression operator.
+#' @param dv The derivative (gradient) of the penalty of the regression operator.
+#' @param dw The derivative (Jacobian matrix) of the function encoding the dependence structure among the regression coefficients.
+#' 
+#' @return The value of the gradient for the input \eqn{betavector}.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 100
+#' p <- 500
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' lambda <- 1
+#' temp <- standardLasso(X,y,lambda)
+#' print(objFunctionGradient(betavector,temp$w,temp$du,temp$dv,temp$dw))
+#' 
+#' @export
+objFunctionGradient <- function(betavector,w,du,dv,dw) {
+	temp <- abs(w(betavector))
+	du(betavector) + as.vector( t(dw(betavector)) %*% (sign(w(betavector))*dv(temp)) )
+}
+
+
+
+
+
+# *****************************************************************************
+# Definition of the smoothed objective function and its gradient
+# *****************************************************************************
+
+#' Auxiliary function to define the objective function of the smoothed L1 penalized regression operator.
+#' 
+#' @param betavector The vector of regression coefficients.
+#' @param u The function encoding the objective of the regression operator.
+#' @param v The function encoding the penalty of the regression operator.
+#' @param w The function encoding the dependence structure among the regression coefficients.
 #' @param mu The Nesterov smoothing parameter.
 #' @param entropy A boolean switch to select the entropy prox function (default) or the squared error prox function.
 #' 
-#' @return The value of the smoothed LASSO objective function.
+#' @return The value of the smoothed regression operator for the input \eqn{betavector}.
 #' 
 #' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
 #' 
 #' @examples
 #' library(smoothedLasso)
 #' n <- 100
 #' p <- 500
-#' beta <- runif(p)
+#' betavector <- runif(p)
 #' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
+#' y <- X %*% betavector
 #' lambda <- 1
-#' print(objFunctionSmooth(beta,X,y,lambda,mu=0.1))
+#' temp <- standardLasso(X,y,lambda)
+#' print(objFunctionSmooth(betavector,temp$u,temp$v,temp$w,mu=0.1))
 #' 
 #' @export
-objFunctionSmooth <- function(beta,X,y,lambda,mu,entropy=T) {
-	n <- nrow(X)
-	# two lines through the origin with slopes -1 and +1 define the PWA for the absolute value
+objFunctionSmooth <- function(betavector,u,v,w,mu,entropy=TRUE) {
 	p <- c(-1,+1)
-	# smooth each component of beta separately and sum them up to obtain the L1 norm of beta
-	1/n*sum((y - X %*% beta)**2) + lambda*sum(nesterovPWA(p,beta,mu,entropy))
+	temp <- nesterovPWA(p,w(betavector),mu,entropy)
+	u(betavector) + v(temp)
 }
 
-#' Auxiliary function which computes the gradient of the smoothed LASSO objective function with respect to \eqn{\beta}.
+#' Auxiliary function which computes the gradient of the smoothed L1 penalized regression operator.
 #' 
-#' @param beta The \eqn{p}-vector of coefficients.
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
+#' @param betavector The vector of regression coefficients.
+#' @param w The function encoding the dependence structure among the regression coefficients.
+#' @param du The derivative (gradient) of the objective of the regression operator.
+#' @param dv The derivative (gradient) of the penalty of the regression operator.
+#' @param dw The derivative (Jacobian matrix) of the function encoding the dependence structure among the regression coefficients.
 #' @param mu The Nesterov smoothing parameter.
 #' @param entropy A boolean switch to select the entropy prox function (default) or the squared error prox function.
 #' 
-#' @return The value of the gradient of the LASSO objective function at \eqn{\beta}.
+#' @return The value of the gradient for the input \eqn{betavector}.
 #' 
 #' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
 #' 
 #' @examples
 #' library(smoothedLasso)
 #' n <- 100
 #' p <- 500
-#' beta <- runif(p)
+#' betavector <- runif(p)
 #' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
+#' y <- X %*% betavector
 #' lambda <- 1
-#' print(objFunctionSmoothGradient(beta,X,y,lambda,mu=0.1))
+#' temp <- standardLasso(X,y,lambda)
+#' print(objFunctionSmoothGradient(betavector,temp$w,temp$du,temp$dv,temp$dw,mu=0.1))
 #' 
 #' @export
-objFunctionSmoothGradient <- function(beta,X,y,lambda,mu,entropy=T) {
-	n <- nrow(X)
-	# two lines through the origin with slopes -1 and +1 define the PWA for the absolute value
+objFunctionSmoothGradient <- function(betavector,w,du,dv,dw,mu,entropy=TRUE) {
 	p <- c(-1,+1)
-	as.numeric(-2/n * t(y - X %*% beta) %*% X) + lambda*nesterovArgumentGradient(p,beta,mu,entropy)
+	temp <- nesterovArgumentGradient(p,w(betavector),mu,entropy)
+	du(betavector) + as.vector( t(dw(betavector)) %*% (temp*dv(temp)) )
 }
 
 
 
 
 
-# ************************************************************************
-# Linear regression with the unsmoothed and smoothed LASSO
+# *****************************************************************************
+# Minimization of the unsmoothed and smoothed objective functions
 # 
 # Additionally, the progressive smoothing procedure is defined here.
-# ************************************************************************
+# *****************************************************************************
 
-#' Minimize the unsmoothed LASSO objective function with respect to \eqn{\beta}.
-#' Three options are available: BFGS with analytical gradient (\eqn{method=0}), BFGS with numerical gradient (\eqn{method=1}), and simulated annealing which is gradient free (\eqn{method=2}).
-#' The default is \eqn{method=0}.
+#' Minimize the objective function of an unsmoothed or smoothed regression operator with respect to \eqn{betavector} using BFGS.
 #' 
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
-#' @param method The method used for minimization: BFGS with analytical gradient (\eqn{method=0}), BFGS with numerical gradient (\eqn{method=1}), and simulated annealing which is gradient free (\eqn{method=2}). The default is \eqn{method=0}.
+#' @param p The dimension of the unknown parameters (regression coefficients).
+#' @param obj The objective function of the regression operator as a function of \eqn{betavector}.
+#' @param objgrad The gradient function of the regression operator as a function of \eqn{betavector}.
 #' 
-#' @return The LASSO estimator \eqn{\beta}.
+#' @return The estimator \eqn{betavector} (minimizer) of the regression operator.
 #' 
 #' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
 #' 
 #' @examples
 #' library(smoothedLasso)
 #' n <- 100
 #' p <- 500
-#' beta <- runif(p)
+#' betavector <- runif(p)
 #' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
+#' y <- X %*% betavector
 #' lambda <- 1
-#' print(solveUnsmoothedLASSO(X,y,lambda))
+#' temp <- standardLasso(X,y,lambda)
+#' obj <- function(z) objFunctionSmooth(z,temp$u,temp$v,temp$w,mu=0.1)
+#' objgrad <- function(z) objFunctionSmoothGradient(z,temp$w,temp$du,temp$dv,temp$dw,mu=0.1)
+#' print(minimizeFunction(p,obj,objgrad))
 #' 
 #' @export
-solveUnsmoothedLASSO <- function(X,y,lambda,method=0) {
-	p <- ncol(X)
-	# analytical gradient
-	if(method==0) {
-		optim(	par = runif(p),
-				fn = function(z) objFunction(z,X,y,lambda),
-				gr = function(z) objFunctionGradient(z,X,y,lambda),
-				method = "BFGS")$par
-	}
-	# numerical gradient
-	else if(method==1) {
-		optim(	par = runif(p),
-				fn = function(z) objFunction(z,X,y,lambda),
-				method = "BFGS")$par
-	}
-	# gradient free
-	else if(method==2) {
-		optim(	par = runif(p),
-				fn = function(z) objFunction(z,X,y,lambda),
-				method = "SANN")$par
-	}
+minimizeFunction <- function(p,obj,objgrad) {
+	optim(par=runif(p), fn=obj, gr=objgrad, method="BFGS")$par
 }
 
-#' Minimize the smoothed LASSO objective function with respect to \eqn{\beta} using BFGS.
+#' Minimize the objective function of a smoothed regression operator with respect to \eqn{betavector} using the progressive smoothing algorithm.
 #' 
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
-#' @param mu The Nesterov smoothing parameter.
-#' @param entropy A boolean switch to select the entropy prox function (default) or the squared error prox function.
+#' @param p The dimension of the unknown parameters (regression coefficients).
+#' @param obj The objective function of the regression operator. Note that in the case of the progressive smoothing algorithm, the objective function must be a function of both \eqn{betavector} and \eqn{mu}.
+#' @param objgrad The gradient function of the regression operator. Note that in the case of the progressive smoothing algorithm, the gradient must be a function of both \eqn{betavector} and \eqn{mu}.
+#' @param muSeq The sequence of Nesterov smoothing parameters. The default is \eqn{2^{-n}} for \eqn{n \in \{-3,\ldots,6\}}.
 #' 
-#' @return The LASSO estimator \eqn{\beta}.
+#' @return The estimator \eqn{betavector} (minimizer) of the regression operator.
 #' 
 #' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
 #' 
 #' @examples
 #' library(smoothedLasso)
 #' n <- 100
 #' p <- 500
-#' beta <- runif(p)
+#' betavector <- runif(p)
 #' X <- matrix(runif(n*p),nrow=n,ncol=p)
-#' y <- X %*% beta
+#' y <- X %*% betavector
 #' lambda <- 1
-#' print(solveSmoothedLASSO(X,y,lambda,mu=0.1))
+#' temp <- standardLasso(X,y,lambda)
+#' obj <- function(z,m) objFunctionSmooth(z,temp$u,temp$v,temp$w,mu=m)
+#' objgrad <- function(z,m) objFunctionSmoothGradient(z,temp$w,temp$du,temp$dv,temp$dw,mu=m)
+#' print(minimizeSmoothedSequence(p,obj,objgrad))
 #' 
 #' @export
-solveSmoothedLASSO <- function(X,y,lambda,mu,entropy=T) {
-	p <- ncol(X)
-	optim(	par = runif(p),
-			fn = function(z) objFunctionSmooth(z,X,y,lambda,mu,entropy),
-			gr = function(z) objFunctionSmoothGradient(z,X,y,lambda,mu,entropy),
-			method = "BFGS")$par
-}
-
-#' Minimize the smoothed LASSO objective function with respect to \eqn{\beta} using the progressive smoothing algorithm.
-#' 
-#' @param X The data matrix of dimensions \eqn{n \times p}.
-#' @param y The \eqn{n}-vector of responses.
-#' @param lambda The LASSO regularization parameter.
-#' @param muSeq The sequence of Nesterov smoothing parameters. The default is \eqn{2^{-n}} for \eqn{n \in \{0,\ldots,5\}}.
-#' @param entropy A boolean switch to select the entropy prox function (default) or the squared error prox function.
-#' 
-#' @return The LASSO estimator \eqn{\beta}.
-#' 
-#' @importFrom Rdpack reprompt
-#' 
-#' @examples
-#' library(smoothedLasso)
-#' require(Matrix)
-#' n <- 100
-#' p <- 500
-#' beta <- runif(p)
-#' X <- Matrix(sample(0:1,size=n*p,replace=TRUE),nrow=n,ncol=p,sparse=TRUE)
-#' y <- X %*% beta
-#' lambda <- 1
-#' print(solveSmoothedLASSOSequence(X,y,lambda))
-#' 
-#' @export
-solveSmoothedLASSOSequence <- function(X,y,lambda,muSeq=2**seq(3,-6),entropy=T) {
-	p <- ncol(X)
+minimizeSmoothedSequence <- function(p,obj,objgrad,muSeq=2**seq(3,-6)) {
 	res <- runif(p)
 	for(mu in muSeq) {
-		res <- optim(	par = res,
-						fn = function(z) objFunctionSmooth(z,X,y,lambda,mu,entropy),
-						gr = function(z) objFunctionSmoothGradient(z,X,y,lambda,mu,entropy),
-						method = "BFGS")$par
+		res <- optim(par=res, fn=function(z) obj(z,mu), gr=function(z) objgrad(z,mu), method="BFGS")$par
 	}
 	return(res)
 }
