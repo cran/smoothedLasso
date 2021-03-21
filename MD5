@@ -1,6 +1,7 @@
-0841b5508fd05de288adcd209d598987 *DESCRIPTION
-83e6c888f51f6947109f1f1278247cf1 *NAMESPACE
-e53af1b75f6fed1fafc2eace29be6786 *R/smoothedLasso.r
+976f101f689634ade810b190f5aec7b5 *DESCRIPTION
+82e440b93a67451eba101d5766764239 *NAMESPACE
+f2152b692b6f0a6aef3bfdf61e995733 *R/smoothedLasso.r
+63e350b892d80d62e3db8a27d42637b9 *man/crossvalidation.Rd
 eb9f822771caceac0cf68927ba5a492d *man/elasticNet.Rd
 8ff11f8c668afbb98320310503ce87bd *man/fusedLasso.Rd
 8d9b9b3a23ce882918ee466aadde9ce4 *man/graphicalLasso.Rd

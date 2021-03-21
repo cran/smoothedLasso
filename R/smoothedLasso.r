@@ -7,6 +7,7 @@
 # 2) The functions 'objFunction' and 'objFunctionGradient' defining the unsmoothed objective function of an L1 penalized regression operator and its gradient, as well as 'objFunctionSmooth' and 'objFunctionSmoothGradient' defining the smoothed objective function of an L1 penalized regression operator.
 # 3) The minimization procedure 'solveFunction' returning the regression estimates for an unsmoothed or smoothed regression operator.
 # 4) The progressive smoothing approach 'solveSmoothedSequence' returning the regression estimates for a smoothed regression operator.
+# 5) The function "crossvalidation" to perform cross validation for selection of the regularization parameter.
 # **************************************************************************************************************************************
 
 
@@ -506,5 +507,52 @@ minimizeSmoothedSequence <- function(p,obj,objgrad,muSeq=2**seq(3,-6)) {
 	for(mu in muSeq) {
 		res <- optim(par=res, fn=function(z) obj(z,mu), gr=function(z) objgrad(z,mu), method="BFGS")$par
 	}
+	return(res)
+}
+
+#' Perform cross validation to select the regularization parameter.
+#' 
+#' @param auxfun A complete fitting function which takes as arguments a data matrix \eqn{X}, a response vector \eqn{y}, and some parameter \eqn{p} (to be tuned), and returns the estimator (\eqn{betavector}) (minimizer) of the regression operator under investigation.
+#' @param X The design matrix.
+#' @param y The response vector.
+#' @param param A vector of regularization parameters which are to be evaluated via cross validation.
+#' @param K The number of folds for cross validation (should divide the number of rows of \eqn{X}). The default is \eqn{10}.
+#' 
+#' @return A vector of average errors over all folds. The entries in the returned vector correspond to the entries in the vector \eqn{param} in the same order.
+#' 
+#' @importFrom Rdpack reprompt
+#' @references Hahn, G., Lutz, S., Laha, N., and Lange, C. (2020). A framework to efficiently smooth L1 penalties for linear regression. bioRxiv:2020.09.17.301788.
+#' @references Tibshirani, R. (2013). Model selection and validation 1: Cross-validation. https://www.stat.cmu.edu/~ryantibs/datamining/lectures/18-val1.pdf
+#' 
+#' @examples
+#' library(smoothedLasso)
+#' n <- 1000
+#' p <- 100
+#' betavector <- runif(p)
+#' X <- matrix(runif(n*p),nrow=n,ncol=p)
+#' y <- X %*% betavector
+#' auxfun <- function(X,y,lambda) {
+#' 		temp <- standardLasso(X,y,lambda)
+#'		obj <- function(z) objFunction(z,temp$u,temp$v,temp$w)
+#' 		objgrad <- function(z) objFunctionGradient(z,temp$w,temp$du,temp$dv,temp$dw)
+#'		return(minimizeFunction(p,obj,objgrad))
+#' }
+#' lambdaVector <- seq(0,1,by=0.1)
+#' print(crossvalidation(auxfun,X,y,lambdaVector,10))
+#' 
+#' @export
+crossvalidation <- function(auxfun,X,y,param,K=10) {
+	n <- nrow(X)
+	folds <- matrix(sample(1:n),nrow=K)
+	res <- sapply(param, function(p) {
+		temp <- sapply(1:K, function(i) {
+			# compute regression with all but fold i
+			excludedIndices <- folds[i,]
+			temp1 <- auxfun(X[-excludedIndices,],y[-excludedIndices],p)
+			temp2 <- X[excludedIndices,] %*% temp1
+			return(sum((temp2-y[excludedIndices])**2))
+		})
+		return(1/n*sum(temp))
+	})
 	return(res)
 }
